@@ -1,94 +1,74 @@
 using API.DTOs;
-using API.Models;
 using API.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
-using Microsoft.IdentityModel.Tokens;
-using System;
-using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace API.Controllers
+namespace API.Controllers;
+
+[ApiController]
+[Route("api/auth")]
+public sealed class AuthController : ControllerBase
 {
-    [ApiController]
-    [Route("api/auth")]
-    public class AuthController : ControllerBase
+    private readonly UserService _users;
+    private readonly PlayerProfileService _profiles;
+    private readonly IJwtTokenService _tokens;
+
+    public AuthController(
+        UserService users,
+        PlayerProfileService profiles,
+        IJwtTokenService tokens)
     {
-        private readonly UserService _userService;
-        private readonly IConfiguration _configuration;
+        _users = users;
+        _profiles = profiles;
+        _tokens = tokens;
+    }
 
-        public AuthController(UserService userService, IConfiguration configuration)
+    [HttpPost("register")]
+    public async Task<IActionResult> Register(RegisterRequestDto request)
+    {
+        var user = await _users.RegisterAsync(request);
+        return user is null
+            ? Conflict(new { message = "Tên đăng nhập đã tồn tại." })
+            : StatusCode(StatusCodes.Status201Created, new
+            {
+                message = "Đăng ký thành công.",
+                username = user.Username
+            });
+    }
+
+    [HttpPost("login")]
+    public async Task<ActionResult<AuthResponseDto>> Login(LoginRequestDto request)
+    {
+        var user = await _users.AuthenticateAsync(request);
+        if (user is null)
         {
-            _userService = userService;
-            _configuration = configuration;
+            return Unauthorized(new { message = "Tài khoản hoặc mật khẩu không chính xác." });
         }
 
-        [HttpPost("register")]
-        public async Task<IActionResult> Register([FromBody] UserRegisterDto dto)
+        PlayerProfileDto? profile = await _profiles.GetByUserIdAsync(user.Id!);
+        if (profile is null)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(new { message = "Dữ liệu đăng ký không hợp lệ." });
-            }
-
-            var user = await _userService.RegisterAsync(dto.Username, dto.Password);
-            if (user == null)
-            {
-                return BadRequest(new { message = "Tên đăng nhập đã tồn tại." });
-            }
-
-            return Ok(new { message = "Đăng ký thành công!", username = user.Username });
+            return Problem("Hồ sơ người chơi không tồn tại.");
         }
 
-        [HttpPost("login")]
-        public async Task<IActionResult> Login([FromBody] UserLoginDto dto)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(new { message = "Tên đăng nhập hoặc mật khẩu không đúng định dạng." });
-            }
+        // [GNS301_Require] JWT được cấp sau khi xác thực thành công và dùng chung cho REST/NGO/TCP chat.
+        return Ok(new AuthResponseDto(
+            _tokens.CreateToken(user),
+            user.Id!,
+            user.Username,
+            profile));
+    }
 
-            var user = await _userService.AuthenticateAsync(dto.Username, dto.Password);
-            if (user == null)
-            {
-                return Unauthorized(new { message = "Tài khoản hoặc mật khẩu không chính xác." });
-            }
-
-            var token = GenerateJwtToken(user);
-            return Ok(new { token });
-        }
-
-        private string GenerateJwtToken(User user)
-        {
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var secret = _configuration["JwtSettings:Secret"] ?? "SuperSecretKeyForNightShiftAsylumGame2026Project";
-            var key = Encoding.ASCII.GetBytes(secret);
-
-            var claims = new List<Claim>
-            {
-                new Claim(ClaimTypes.NameIdentifier, user.Id!),
-                new Claim(ClaimTypes.Name, user.Username)
-            };
-
-            // Add role claims
-            foreach (var role in user.Roles)
-            {
-                claims.Add(new Claim(ClaimTypes.Role, role));
-            }
-
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(claims),
-                Expires = DateTime.UtcNow.AddMinutes(double.Parse(_configuration["JwtSettings:ExpiryInMinutes"] ?? "1440")),
-                Issuer = _configuration["JwtSettings:Issuer"] ?? "NightShiftAsylumBackend",
-                Audience = _configuration["JwtSettings:Audience"] ?? "NightShiftAsylumClient",
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-            };
-
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            return tokenHandler.WriteToken(token);
-        }
+    [Authorize(Roles = "Player")]
+    [HttpGet("session")]
+    public async Task<ActionResult<SessionDto>> Session()
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var user = userId is null ? null : await _users.GetByIdAsync(userId);
+        var profile = userId is null ? null : await _profiles.GetByUserIdAsync(userId);
+        return user is null || profile is null
+            ? Unauthorized()
+            : Ok(new SessionDto(user.Id!, user.Username, profile));
     }
 }

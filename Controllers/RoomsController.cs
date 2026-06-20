@@ -1,92 +1,87 @@
-using API.Models;
+using API.DTOs;
 using API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using System.Threading.Tasks;
 
-namespace API.Controllers
+namespace API.Controllers;
+
+[ApiController]
+[Authorize(Roles = "Player")]
+[Route("api/rooms")]
+public sealed class RoomsController : ControllerBase
 {
-    [ApiController]
-    [Route("api/rooms")]
-    public class RoomsController : ControllerBase
+    private readonly RoomService _rooms;
+
+    public RoomsController(RoomService rooms)
     {
-        private readonly RoomService _roomService;
+        _rooms = rooms;
+    }
 
-        public RoomsController(RoomService roomService)
+    [HttpGet]
+    public async Task<ActionResult<RoomListDto>> GetWaiting() =>
+        Ok(await _rooms.GetWaitingAsync());
+
+    [HttpGet("{id}")]
+    public async Task<ActionResult<RoomDto>> Get(string id)
+    {
+        RoomDto? room = await _rooms.GetByIdAsync(id);
+        return room is null ? NotFound() : Ok(room);
+    }
+
+    [HttpPost("create")]
+    public async Task<ActionResult<RoomDto>> Create(CreateRoomRequestDto request)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null)
         {
-            _roomService = roomService;
+            return Unauthorized();
         }
 
-        [HttpGet]
-        public async Task<IActionResult> GetRooms()
-        {
-            var rooms = await _roomService.GetRoomsAsync();
-            return Ok(rooms);
-        }
+        string address = HttpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "127.0.0.1";
+        RoomDto room = await _rooms.CreateAsync(request, userId, address);
+        return CreatedAtAction(nameof(Get), new { id = room.Id }, room);
+    }
 
-        [HttpGet("{id}")]
-        public async Task<IActionResult> GetRoom(string id)
-        {
-            var room = await _roomService.GetRoomByIdAsync(id);
-            if (room == null) return NotFound(new { message = "Không tìm thấy phòng." });
-            return Ok(room);
-        }
+    [HttpPost("join/{id}")]
+    public async Task<ActionResult<RoomDto>> Join(string id)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        RoomDto? room = userId is null ? null : await _rooms.JoinAsync(id, userId);
+        return room is null
+            ? Conflict(new { message = "Phòng không tồn tại, đã đầy hoặc đã bắt đầu." })
+            : Ok(room);
+    }
 
-        [HttpPost("create")]
-        public async Task<IActionResult> CreateRoom([FromBody] CreateRoomRequest request)
-        {
-            if (string.IsNullOrEmpty(request.RoomName))
-            {
-                return BadRequest(new { message = "Tên phòng không được để trống." });
-            }
+    [HttpPost("leave/{id}")]
+    public async Task<IActionResult> Leave(string id)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return userId is not null && await _rooms.LeaveAsync(id, userId)
+            ? NoContent()
+            : NotFound();
+    }
 
-            var room = await _roomService.CreateRoomAsync(request.RoomName, request.MaxPlayers);
-            return Ok(room);
-        }
+    [HttpPut("{id}/status")]
+    public async Task<IActionResult> UpdateStatus(
+        string id,
+        UpdateRoomStatusRequestDto request)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return userId is not null &&
+               await _rooms.UpdateStatusAsync(id, userId, request.Status)
+            ? NoContent()
+            : BadRequest(new { message = "Trạng thái không hợp lệ hoặc bạn không phải host." });
+    }
 
-        [Authorize]
-        [HttpPost("join/{id}")]
-        public async Task<IActionResult> JoinRoom(string id)
-        {
-            var playerId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(playerId))
-            {
-                return Unauthorized(new { message = "Không xác định được danh tính người chơi." });
-            }
-
-            var success = await _roomService.JoinRoomAsync(id, playerId);
-            if (!success)
-            {
-                return BadRequest(new { message = "Không thể tham gia phòng. Phòng có thể đã đầy hoặc không tồn tại." });
-            }
-
-            return Ok(new { message = "Tham gia phòng thành công!", roomId = id });
-        }
-
-        [Authorize]
-        [HttpPost("leave/{id}")]
-        public async Task<IActionResult> LeaveRoom(string id)
-        {
-            var playerId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(playerId))
-            {
-                return Unauthorized(new { message = "Không xác định được danh tính người chơi." });
-            }
-
-            var success = await _roomService.LeaveRoomAsync(id, playerId);
-            if (!success)
-            {
-                return BadRequest(new { message = "Không thể rời phòng." });
-            }
-
-            return Ok(new { message = "Rời phòng thành công!" });
-        }
-
-        public class CreateRoomRequest
-        {
-            public string RoomName { get; set; } = null!;
-            public int MaxPlayers { get; set; } = 4;
-        }
+    [HttpPost("{id}/remove/{memberId}")]
+    public async Task<IActionResult> RemoveMember(string id, string memberId)
+    {
+        string? ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return ownerId is not null &&
+               await _rooms.RemoveMemberAsync(id, ownerId, memberId)
+            ? NoContent()
+            : Forbid();
     }
 }

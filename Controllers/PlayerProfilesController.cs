@@ -1,61 +1,54 @@
-using API.Models;
+using API.DTOs;
 using API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using System.Threading.Tasks;
 
-namespace API.Controllers
+namespace API.Controllers;
+
+[ApiController]
+[Authorize(Roles = "Player")]
+[Route("api/playerprofiles")]
+public sealed class PlayerProfilesController : ControllerBase
 {
-    [ApiController]
-    [Route("api/playerprofiles")]
-    public class PlayerProfilesController : ControllerBase
+    private readonly PlayerProfileService _profiles;
+
+    public PlayerProfilesController(PlayerProfileService profiles)
     {
-        private readonly PlayerProfileService _profileService;
+        _profiles = profiles;
+    }
 
-        public PlayerProfilesController(PlayerProfileService profileService)
+    [HttpGet("me")]
+    public async Task<ActionResult<PlayerProfileDto>> GetMine()
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        PlayerProfileDto? profile = userId is null
+            ? null
+            : await _profiles.GetByUserIdAsync(userId);
+        return profile is null ? NotFound() : Ok(profile);
+    }
+
+    [HttpPut("me")]
+    public async Task<IActionResult> UpdateMine(UpdateProfileRequestDto request)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null)
         {
-            _profileService = profileService;
+            return Unauthorized();
         }
+        await _profiles.UpdateNicknameAsync(userId, request.Nickname);
+        return NoContent();
+    }
 
-        [Authorize]
-        [HttpGet("me")]
-        public async Task<IActionResult> GetMyProfile()
+    [HttpPost("me/stats")]
+    public async Task<IActionResult> IncrementStats(MatchStatRequestDto request)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null)
         {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            var profile = await _profileService.GetByUserIdAsync(userId);
-            if (profile == null) return NotFound(new { message = "Không tìm thấy hồ sơ người chơi." });
-
-            return Ok(profile);
+            return Unauthorized();
         }
-
-        [Authorize]
-        [HttpPut("me")]
-        public async Task<IActionResult> UpdateMyProfile([FromBody] PlayerProfile updatedProfile)
-        {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            await _profileService.UpdateProfileAsync(userId, updatedProfile);
-            return Ok(new { message = "Cập nhật hồ sơ người chơi thành công!" });
-        }
-
-        [Authorize]
-        [HttpPost("me/stats")]
-        public async Task<IActionResult> IncrementStats([FromBody] StatsIncrementRequest request)
-        {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            await _profileService.IncrementStatsAsync(userId, request.Escaped);
-            return Ok(new { message = "Cập nhật chỉ số trận đấu thành công!" });
-        }
-
-        public class StatsIncrementRequest
-        {
-            public bool Escaped { get; set; }
-        }
+        await _profiles.IncrementStatsAsync(userId, request.Escaped);
+        return NoContent();
     }
 }

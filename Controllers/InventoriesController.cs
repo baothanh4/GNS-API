@@ -1,62 +1,54 @@
-using API.Models;
+using API.DTOs;
 using API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
 using System.Security.Claims;
-using System.Threading.Tasks;
 
-namespace API.Controllers
+namespace API.Controllers;
+
+[ApiController]
+[Authorize(Roles = "Player")]
+[Route("api/inventories")]
+public sealed class InventoriesController : ControllerBase
 {
-    [ApiController]
-    [Route("api/inventories")]
-    public class InventoriesController : ControllerBase
+    private readonly InventoryService _inventories;
+
+    public InventoriesController(InventoryService inventories)
     {
-        private readonly InventoryService _inventoryService;
+        _inventories = inventories;
+    }
 
-        public InventoriesController(InventoryService inventoryService)
+    [HttpGet("me")]
+    public async Task<ActionResult<InventoryDto>> GetMine()
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        InventoryDto? inventory = userId is null
+            ? null
+            : await _inventories.GetByPlayerIdAsync(userId);
+        return inventory is null ? NotFound() : Ok(inventory);
+    }
+
+    [HttpPut("me")]
+    public async Task<IActionResult> ReplaceMine(UpdateInventoryRequestDto request)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null)
         {
-            _inventoryService = inventoryService;
+            return Unauthorized();
         }
+        await _inventories.ReplaceItemsAsync(userId, request);
+        return NoContent();
+    }
 
-        [Authorize]
-        [HttpGet("me")]
-        public async Task<IActionResult> GetMyInventory()
+    [HttpPost("me/items")]
+    public async Task<IActionResult> AddItem(AddInventoryItemRequestDto request)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null)
         {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            var inventory = await _inventoryService.GetByPlayerIdAsync(userId);
-            if (inventory == null) return NotFound(new { message = "Không tìm thấy túi đồ của người chơi." });
-
-            return Ok(inventory);
+            return Unauthorized();
         }
-
-        [Authorize]
-        [HttpPut("me")]
-        public async Task<IActionResult> UpdateMyInventory([FromBody] List<InventoryItem> items)
-        {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            await _inventoryService.UpdateInventoryAsync(userId, items);
-            return Ok(new { message = "Cập nhật túi đồ thành công!" });
-        }
-
-        [Authorize]
-        [HttpPost("me/items")]
-        public async Task<IActionResult> AddItemToInventory([FromBody] InventoryItem item)
-        {
-            if (string.IsNullOrEmpty(item.ItemId) || string.IsNullOrEmpty(item.Name) || item.Quantity <= 0)
-            {
-                return BadRequest(new { message = "Thông tin vật phẩm không hợp lệ." });
-            }
-
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            await _inventoryService.AddItemAsync(userId, item);
-            return Ok(new { message = "Thêm vật phẩm vào túi đồ thành công!" });
-        }
+        await _inventories.AddItemAsync(userId, request);
+        return NoContent();
     }
 }

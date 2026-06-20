@@ -20,10 +20,23 @@ namespace API.Models
         [BsonElement("currentPlayers")]
         public List<string> CurrentPlayers { get; set; } = new List<string>();
 
+        [BsonElement("hostPlayerId")]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string HostPlayerId { get; set; } = null!;
+
+        [BsonElement("hostAddress")]
+        public string HostAddress { get; set; } = "127.0.0.1";
+
+        [BsonElement("port")]
+        public int Port { get; set; } = 7777;
+
         [BsonElement("status")]
         public string Status { get; set; } = "Waiting"; // Waiting, Playing, Finished
 
         [BsonElement("createdAt")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        [BsonElement("updatedAt")]
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
 }

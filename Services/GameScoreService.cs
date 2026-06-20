@@ -1,31 +1,41 @@
-using API.Config;
-using Microsoft.Extensions.Options;
+using API.DTOs;
 using API.Models;
-using MongoDB.Driver;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using API.Repositories;
 
-namespace API.Services
+namespace API.Services;
+
+public sealed class GameScoreService
 {
-    public class GameScoreService
+    private readonly IGameScoreRepository _scores;
+
+    public GameScoreService(IGameScoreRepository scores)
     {
-        private readonly IMongoCollection<GameScore> _scores;
+        _scores = scores;
+    }
 
-        public GameScoreService(MongoDbService mongoDbService, IOptions<MongoDbSettings> settings)
+    public async Task<GameScoreListDto> GetByPlayerAsync(string playerId)
+    {
+        IReadOnlyList<GameScore> scores = await _scores.GetByPlayerAsync(playerId);
+        return new GameScoreListDto(scores.Select(score => score.ToDto()).ToList());
+    }
+
+    public async Task<GameScoreDto> RecordAsync(
+        RecordGameScoreRequestDto request,
+        string requestingPlayerId)
+    {
+        if (!request.Players.Contains(requestingPlayerId))
         {
-            _scores = mongoDbService.GetCollection<GameScore>(settings.Value.GameScoresCollectionName);
+            request.Players.Add(requestingPlayerId);
         }
 
-        public async Task<List<GameScore>> GetScoresAsync() =>
-            await _scores.Find(_ => true).ToListAsync();
-
-        public async Task<List<GameScore>> GetScoresByPlayerAsync(string playerId) =>
-            await _scores.Find(s => s.Players.Contains(playerId)).ToListAsync();
-
-        public async Task<GameScore> RecordScoreAsync(GameScore score)
+        var score = new GameScore
         {
-            await _scores.InsertOneAsync(score);
-            return score;
-        }
+            MatchId = request.MatchId.Trim(),
+            Players = request.Players.Distinct().ToList(),
+            EscapeTimeSeconds = request.EscapeTimeSeconds,
+            Result = request.Result.Trim()
+        };
+        await _scores.CreateAsync(score);
+        return score.ToDto();
     }
 }
