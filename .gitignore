@@ -1,4 +1,19 @@
+# Build outputs
 bin/
 obj/
+
+# IDE and Editor files
+.vs/
+.vscode/
+.idea/
 *.user
 *.suo
+*.userprefs
+*.sln.docstates
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Unity meta files (should not be tracked in Backend-Server)
+*.meta
