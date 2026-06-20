@@ -1,4 +1,6 @@
+using API.Chat;
 using API.Config;
+using API.Repositories;
 using API.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -6,72 +8,61 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add configuration file (appsettings.json) in current directory
-builder.Configuration.SetBasePath(AppContext.BaseDirectory);
-builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+builder.Services.Configure<MongoDbSettings>(
+    builder.Configuration.GetSection("MongoDbSettings"));
+builder.Services.Configure<GlobalChatSettings>(
+    builder.Configuration.GetSection("GlobalChat"));
 
-// Configure MongoDB Settings
-builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDbSettings"));
-
-// Register MongoDB Services
 builder.Services.AddSingleton<MongoDbService>();
+builder.Services.AddSingleton<IUserRepository, UserRepository>();
+builder.Services.AddSingleton<IPlayerProfileRepository, PlayerProfileRepository>();
+builder.Services.AddSingleton<IInventoryRepository, InventoryRepository>();
+builder.Services.AddSingleton<IRoomRepository, RoomRepository>();
+builder.Services.AddSingleton<IGameScoreRepository, GameScoreRepository>();
+
+builder.Services.AddSingleton<IPasswordHasher, PasswordHasher>();
+builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<PlayerProfileService>();
 builder.Services.AddSingleton<InventoryService>();
-builder.Services.AddSingleton<GameScoreService>();
 builder.Services.AddSingleton<RoomService>();
+builder.Services.AddSingleton<GameScoreService>();
 
-// Add Controllers and JSON formatting
+// [GNS301_Require] Hosted service chạy TCP chat bất đồng bộ cùng vòng đời Web API.
+builder.Services.AddHostedService<GlobalChatServer>();
+
 builder.Services.AddControllers();
+builder.Services.AddCors(options => options.AddPolicy("UnityClient", policy =>
+    policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
-// Configure CORS for Unity WebGL / local connection flexibility
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
+string secret = builder.Configuration["JwtSettings:Secret"]
+    ?? throw new InvalidOperationException("JwtSettings:Secret is missing.");
+byte[] key = Encoding.UTF8.GetBytes(secret);
+
+// [GNS301_Require] JWT bearer xác thực role Player/Admin trước khi vào endpoint riêng tư.
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        options.RequireHttpsMetadata = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(key),
+            ValidateIssuer = true,
+            ValidIssuer = builder.Configuration["JwtSettings:Issuer"],
+            ValidateAudience = true,
+            ValidAudience = builder.Configuration["JwtSettings:Audience"],
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero
+        };
     });
-});
-
-// Configure JWT Authentication
-var secretKey = builder.Configuration["JwtSettings:Secret"] ?? "SuperSecretKeyForNightShiftAsylumGame2026Project";
-var key = Encoding.ASCII.GetBytes(secretKey);
-
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.RequireHttpsMetadata = false;
-    options.SaveToken = true;
-    options.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(key),
-        ValidateIssuer = true,
-        ValidIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "NightShiftAsylumBackend",
-        ValidateAudience = true,
-        ValidAudience = builder.Configuration["JwtSettings:Audience"] ?? "NightShiftAsylumClient",
-        ValidateLifetime = true,
-        ClockSkew = TimeSpan.Zero
-    };
-});
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
-
-// Enable CORS
-app.UseCors("AllowAll");
-
-// Use Routing & Authentication
-app.UseRouting();
+app.UseCors("UnityClient");
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
-// Configure the backend to run on port 5000 as configured in Unity APIManager.cs
-app.Run("http://localhost:5000");
+await app.RunAsync("http://0.0.0.0:5000");

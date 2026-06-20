@@ -1,93 +1,65 @@
-using API.Config;
-using Microsoft.Extensions.Options;
+using API.DTOs;
 using API.Models;
-using MongoDB.Driver;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
+using API.Repositories;
 
-namespace API.Services
+namespace API.Services;
+
+public sealed class UserService
 {
-    public class UserService
+    private readonly IUserRepository _users;
+    private readonly IPlayerProfileRepository _profiles;
+    private readonly IInventoryRepository _inventories;
+    private readonly IPasswordHasher _passwordHasher;
+
+    public UserService(
+        IUserRepository users,
+        IPlayerProfileRepository profiles,
+        IInventoryRepository inventories,
+        IPasswordHasher passwordHasher)
     {
-        private readonly IMongoCollection<User> _users;
-        private readonly IMongoCollection<PlayerProfile> _profiles;
-        private readonly IMongoCollection<Inventory> _inventories;
+        _users = users;
+        _profiles = profiles;
+        _inventories = inventories;
+        _passwordHasher = passwordHasher;
+    }
 
-        public UserService(MongoDbService mongoDbService, IOptions<MongoDbSettings> settings)
+    public async Task<User?> GetByIdAsync(string id) =>
+        await _users.GetByIdAsync(id);
+
+    public async Task<User?> RegisterAsync(RegisterRequestDto request)
+    {
+        if (await _users.GetByUsernameAsync(request.Username) is not null)
         {
-            _users = mongoDbService.GetCollection<User>(settings.Value.UsersCollectionName);
-            _profiles = mongoDbService.GetCollection<PlayerProfile>(settings.Value.PlayerProfilesCollectionName);
-            _inventories = mongoDbService.GetCollection<Inventory>(settings.Value.InventoriesCollectionName);
+            return null;
         }
 
-        public async Task<User?> GetByIdAsync(string id) =>
-            await _users.Find(u => u.Id == id).FirstOrDefaultAsync();
-
-        public async Task<User?> GetByUsernameAsync(string username) =>
-            await _users.Find(u => u.Username.ToLower() == username.ToLower()).FirstOrDefaultAsync();
-
-        public async Task<User?> RegisterAsync(string username, string password)
+        var user = new User
         {
-            // Validate unique username
-            var existingUser = await GetByUsernameAsync(username);
-            if (existingUser != null) return null;
+            Email = request.Email.Trim(),
+            Username = request.Username.Trim(),
+            NormalizedUsername = request.Username.Trim().ToUpperInvariant(),
+            PasswordHash = _passwordHasher.Hash(request.Password)
+        };
+        await _users.CreateAsync(user);
 
-            var user = new User
-            {
-                Username = username,
-                PasswordHash = HashSha256(password)
-            };
-
-            await _users.InsertOneAsync(user);
-
-            // 1. Auto-create Player Profile
-            var profile = new PlayerProfile
-            {
-                UserId = user.Id!,
-                Nickname = user.Username, // Default nickname to username
-                Level = 1,
-                Escapes = 0,
-                Fails = 0
-            };
-            await _profiles.InsertOneAsync(profile);
-
-            // 2. Auto-create Empty Inventory
-            var inventory = new Inventory
-            {
-                PlayerId = user.Id!,
-                Items = new List<InventoryItem>()
-            };
-            await _inventories.InsertOneAsync(inventory);
-
-            return user;
-        }
-
-        public async Task<User?> AuthenticateAsync(string username, string password)
+        await _profiles.CreateAsync(new PlayerProfile
         {
-            var user = await GetByUsernameAsync(username);
-            if (user == null) return null;
-
-            var hash = HashSha256(password);
-            if (user.PasswordHash != hash)
-            {
-                return null;
-            }
-
-            return user;
-        }
-
-        public static string HashSha256(string input)
+            UserId = user.Id!,
+            Nickname = user.Username
+        });
+        await _inventories.CreateAsync(new Inventory
         {
-            using var sha256 = SHA256.Create();
-            var bytes = Encoding.UTF8.GetBytes(input);
-            var hash = sha256.ComputeHash(bytes);
-            var sb = new StringBuilder();
-            foreach (var b in hash)
-            {
-                sb.Append(b.ToString("x2"));
-            }
-            return sb.ToString();
-        }
+            PlayerId = user.Id!
+        });
+        return user;
+    }
+
+    public async Task<User?> AuthenticateAsync(LoginRequestDto request)
+    {
+        User? user = await _users.GetByUsernameAsync(request.Username);
+        return user is not null &&
+               _passwordHasher.Verify(request.Password, user.PasswordHash)
+            ? user
+            : null;
     }
 }

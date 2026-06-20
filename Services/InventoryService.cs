@@ -1,47 +1,38 @@
-using API.Config;
-using Microsoft.Extensions.Options;
+using API.DTOs;
 using API.Models;
-using MongoDB.Driver;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using API.Repositories;
 
-namespace API.Services
+namespace API.Services;
+
+public sealed class InventoryService
 {
-    public class InventoryService
+    private readonly IInventoryRepository _inventories;
+
+    public InventoryService(IInventoryRepository inventories)
     {
-        private readonly IMongoCollection<Inventory> _inventories;
-
-        public InventoryService(MongoDbService mongoDbService, IOptions<MongoDbSettings> settings)
-        {
-            _inventories = mongoDbService.GetCollection<Inventory>(settings.Value.InventoriesCollectionName);
-        }
-
-        public async Task<Inventory?> GetByPlayerIdAsync(string playerId) =>
-            await _inventories.Find(i => i.PlayerId == playerId).FirstOrDefaultAsync();
-
-        public async Task UpdateInventoryAsync(string playerId, List<InventoryItem> items)
-        {
-            var filter = Builders<Inventory>.Filter.Eq(i => i.PlayerId, playerId);
-            var update = Builders<Inventory>.Update.Set(i => i.Items, items);
-            await _inventories.UpdateOneAsync(filter, update);
-        }
-
-        public async Task AddItemAsync(string playerId, InventoryItem item)
-        {
-            var inventory = await GetByPlayerIdAsync(playerId);
-            if (inventory == null) return;
-
-            var existingItem = inventory.Items.Find(i => i.ItemId == item.ItemId);
-            if (existingItem != null)
-            {
-                existingItem.Quantity += item.Quantity;
-            }
-            else
-            {
-                inventory.Items.Add(item);
-            }
-
-            await UpdateInventoryAsync(playerId, inventory.Items);
-        }
+        _inventories = inventories;
     }
+
+    public async Task<InventoryDto?> GetByPlayerIdAsync(string playerId)
+    {
+        Inventory? inventory = await _inventories.GetByPlayerIdAsync(playerId);
+        return inventory?.ToDto();
+    }
+
+    public async Task ReplaceItemsAsync(string playerId, UpdateInventoryRequestDto request)
+    {
+        List<InventoryItem> items = request.Items.Select(ToModel).ToList();
+        await _inventories.ReplaceItemsAsync(playerId, items);
+    }
+
+    public async Task AddItemAsync(string playerId, AddInventoryItemRequestDto request) =>
+        await _inventories.AddItemAsync(playerId, ToModel(request));
+
+    private static InventoryItem ToModel(AddInventoryItemRequestDto item) =>
+        new()
+        {
+            ItemId = item.ItemId.Trim(),
+            Name = item.Name.Trim(),
+            Quantity = item.Quantity
+        };
 }

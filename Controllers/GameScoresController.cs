@@ -1,51 +1,39 @@
-using API.Models;
+using API.DTOs;
 using API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using System.Threading.Tasks;
 
-namespace API.Controllers
+namespace API.Controllers;
+
+[ApiController]
+[Authorize(Roles = "Player")]
+[Route("api/gamescores")]
+public sealed class GameScoresController : ControllerBase
 {
-    [ApiController]
-    [Route("api/gamescores")]
-    public class GameScoresController : ControllerBase
+    private readonly GameScoreService _scores;
+
+    public GameScoresController(GameScoreService scores)
     {
-        private readonly GameScoreService _scoreService;
+        _scores = scores;
+    }
 
-        public GameScoresController(GameScoreService scoreService)
-        {
-            _scoreService = scoreService;
-        }
+    [HttpGet("me")]
+    public async Task<ActionResult<GameScoreListDto>> GetMine()
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return userId is null
+            ? Unauthorized()
+            : Ok(await _scores.GetByPlayerAsync(userId));
+    }
 
-        [HttpGet]
-        public async Task<IActionResult> GetAllScores()
-        {
-            var scores = await _scoreService.GetScoresAsync();
-            return Ok(scores);
-        }
-
-        [Authorize]
-        [HttpGet("me")]
-        public async Task<IActionResult> GetMyScores()
-        {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userId)) return Unauthorized();
-
-            var scores = await _scoreService.GetScoresByPlayerAsync(userId);
-            return Ok(scores);
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> RecordScore([FromBody] GameScore score)
-        {
-            if (string.IsNullOrEmpty(score.MatchId) || score.Players == null || score.Players.Count == 0)
-            {
-                return BadRequest(new { message = "Dữ liệu lịch sử trận đấu không hợp lệ." });
-            }
-
-            var recorded = await _scoreService.RecordScoreAsync(score);
-            return Ok(recorded);
-        }
+    [HttpPost]
+    public async Task<ActionResult<GameScoreDto>> Record(
+        RecordGameScoreRequestDto request)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return userId is null
+            ? Unauthorized()
+            : Ok(await _scores.RecordAsync(request, userId));
     }
 }

@@ -1,5 +1,6 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
+using System;
 using System.Collections.Generic;
 
 namespace API.Models
@@ -22,5 +23,8 @@ namespace API.Models
 
         [BsonElement("Result")]
         public string Result { get; set; } = null!; // e.g. Victory, Defeat
+
+        [BsonElement("RecordedAt")]
+        public DateTime RecordedAt { get; set; } = DateTime.UtcNow;
     }
 }

@@ -13,6 +13,12 @@ namespace API.Models
         [BsonElement("Username")]
         public string Username { get; set; } = null!;
 
+        [BsonElement("NormalizedUsername")]
+        public string NormalizedUsername { get; set; } = null!;
+
+        [BsonElement("Email")]
+        public string Email { get; set; } = null!;
+
         [BsonElement("PasswordHash")]
         public string PasswordHash { get; set; } = null!;
 

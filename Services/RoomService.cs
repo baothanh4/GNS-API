@@ -1,84 +1,114 @@
-using API.Config;
-using Microsoft.Extensions.Options;
+using API.DTOs;
 using API.Models;
-using MongoDB.Driver;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using API.Repositories;
+using System.Net;
 
-namespace API.Services
+namespace API.Services;
+
+public sealed class RoomService
 {
-    public class RoomService
+    private static readonly HashSet<string> ValidStatuses =
+        new(StringComparer.OrdinalIgnoreCase) { "Waiting", "Playing", "Finished" };
+
+    private readonly IRoomRepository _rooms;
+
+    public RoomService(IRoomRepository rooms)
     {
-        private readonly IMongoCollection<Room> _rooms;
+        _rooms = rooms;
+    }
 
-        public RoomService(MongoDbService mongoDbService, IOptions<MongoDbSettings> settings)
+    public async Task<RoomListDto> GetWaitingAsync()
+    {
+        IReadOnlyList<Room> rooms = await _rooms.GetWaitingAsync();
+        return new RoomListDto(rooms.Select(room => room.ToDto()).ToList());
+    }
+
+    public async Task<RoomDto?> GetByIdAsync(string id) =>
+        (await _rooms.GetByIdAsync(id))?.ToDto();
+
+    public async Task<RoomDto> CreateAsync(
+        CreateRoomRequestDto request,
+        string ownerId,
+        string hostAddress)
+    {
+        var room = new Room
         {
-            _rooms = mongoDbService.GetCollection<Room>(settings.Value.RoomsCollectionName);
+            RoomName = request.RoomName.Trim(),
+            MaxPlayers = request.MaxPlayers,
+            HostPlayerId = ownerId,
+            HostAddress = NormalizeHostAddress(hostAddress),
+            Port = request.Port,
+            CurrentPlayers = new List<string> { ownerId }
+        };
+        await _rooms.CreateAsync(room);
+        return room.ToDto();
+    }
+
+    public async Task<RoomDto?> JoinAsync(string roomId, string userId)
+    {
+        Room? existing = await _rooms.GetByIdAsync(roomId);
+        if (existing?.CurrentPlayers.Contains(userId) == true)
+        {
+            return existing.ToDto();
         }
+        return (await _rooms.JoinAsync(roomId, userId))?.ToDto();
+    }
 
-        public async Task<List<Room>> GetRoomsAsync() =>
-            await _rooms.Find(_ => true).ToListAsync();
-
-        public async Task<Room?> GetRoomByIdAsync(string id) =>
-            await _rooms.Find(r => r.Id == id).FirstOrDefaultAsync();
-
-        public async Task<Room> CreateRoomAsync(string roomName, int maxPlayers)
+    public async Task<bool> LeaveAsync(string roomId, string userId)
+    {
+        Room? room = await _rooms.LeaveAsync(roomId, userId);
+        if (room is null)
         {
-            var room = new Room
-            {
-                RoomName = roomName,
-                MaxPlayers = maxPlayers,
-                CurrentPlayers = new List<string>(),
-                Status = "Waiting"
-            };
-
-            await _rooms.InsertOneAsync(room);
-            return room;
-        }
-
-        public async Task<bool> JoinRoomAsync(string roomId, string userId)
-        {
-            var room = await GetRoomByIdAsync(roomId);
-            if (room == null) return false;
-
-            if (room.CurrentPlayers.Contains(userId)) return true;
-            if (room.CurrentPlayers.Count >= room.MaxPlayers) return false;
-
-            var update = Builders<Room>.Update.Push(r => r.CurrentPlayers, userId);
-            var result = await _rooms.UpdateOneAsync(r => r.Id == roomId, update);
-
-            return result.ModifiedCount > 0;
-        }
-
-        public async Task<bool> LeaveRoomAsync(string roomId, string userId)
-        {
-            var room = await GetRoomByIdAsync(roomId);
-            if (room == null) return false;
-
-            if (!room.CurrentPlayers.Contains(userId)) return true;
-
-            var update = Builders<Room>.Update.Pull(r => r.CurrentPlayers, userId);
-            var result = await _rooms.UpdateOneAsync(r => r.Id == roomId, update);
-
-            if (result.ModifiedCount > 0)
-            {
-                // If room is empty, delete it
-                var updatedRoom = await GetRoomByIdAsync(roomId);
-                if (updatedRoom != null && updatedRoom.CurrentPlayers.Count == 0)
-                {
-                    await _rooms.DeleteOneAsync(r => r.Id == roomId);
-                }
-
-                return true;
-            }
-
             return false;
         }
 
-        public async Task UpdateStatusAsync(string roomId, string status)
+        if (room.CurrentPlayers.Count == 0 || room.HostPlayerId == userId)
         {
-            var update = Builders<Room>.Update.Set(r => r.Status, status);
-            await _rooms.UpdateOneAsync(r => r.Id == roomId, update);
+            await _rooms.DeleteAsync(roomId);
         }
+        return true;
+    }
+
+    public async Task<bool> UpdateStatusAsync(string roomId, string ownerId, string status)
+    {
+        if (!ValidStatuses.Contains(status))
+        {
+            return false;
+        }
+        return await _rooms.UpdateStatusAsync(
+            roomId,
+            ownerId,
+            NormalizeStatus(status));
+    }
+
+    public async Task<bool> RemoveMemberAsync(
+        string roomId,
+        string ownerId,
+        string memberId)
+    {
+        Room? room = await _rooms.GetByIdAsync(roomId);
+        if (room is null || room.HostPlayerId != ownerId || memberId == ownerId)
+        {
+            return false;
+        }
+        return await _rooms.LeaveAsync(roomId, memberId) is not null;
+    }
+
+    private static string NormalizeStatus(string status) =>
+        char.ToUpperInvariant(status[0]) + status[1..].ToLowerInvariant();
+
+    private static string NormalizeHostAddress(string address)
+    {
+        if (!IPAddress.TryParse(address, out IPAddress? parsed))
+        {
+            return address;
+        }
+        if (IPAddress.IsLoopback(parsed))
+        {
+            return "127.0.0.1";
+        }
+        return parsed.IsIPv4MappedToIPv6
+            ? parsed.MapToIPv4().ToString()
+            : parsed.ToString();
     }
 }
