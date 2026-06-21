@@ -1,6 +1,7 @@
 # Build outputs
 bin/
 obj/
+Temp/
 
 # IDE and Editor files
 .vs/

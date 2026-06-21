@@ -29,10 +29,10 @@ public sealed class AuthController : ControllerBase
     {
         var user = await _users.RegisterAsync(request);
         return user is null
-            ? Conflict(new { message = "Tên đăng nhập đã tồn tại." })
+            ? Conflict(new { message = "Username already exists." })
             : StatusCode(StatusCodes.Status201Created, new
             {
-                message = "Đăng ký thành công.",
+                message = "Registration successful.",
                 username = user.Username
             });
     }
@@ -43,13 +43,13 @@ public sealed class AuthController : ControllerBase
         var user = await _users.AuthenticateAsync(request);
         if (user is null)
         {
-            return Unauthorized(new { message = "Tài khoản hoặc mật khẩu không chính xác." });
+            return Unauthorized(new { message = "Invalid username or password." });
         }
 
         PlayerProfileDto? profile = await _profiles.GetByUserIdAsync(user.Id!);
         if (profile is null)
         {
-            return Problem("Hồ sơ người chơi không tồn tại.");
+            return Problem("Player profile does not exist.");
         }
 
         // [GNS301_Require] JWT được cấp sau khi xác thực thành công và dùng chung cho REST/NGO/TCP chat.

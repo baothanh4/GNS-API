@@ -50,7 +50,7 @@ public sealed class RoomsController : ControllerBase
         string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         RoomDto? room = userId is null ? null : await _rooms.JoinAsync(id, userId);
         return room is null
-            ? Conflict(new { message = "Phòng không tồn tại, đã đầy hoặc đã bắt đầu." })
+            ? Conflict(new { message = "The room does not exist, is full, or has already started." })
             : Ok(room);
     }
 
@@ -72,7 +72,7 @@ public sealed class RoomsController : ControllerBase
         return userId is not null &&
                await _rooms.UpdateStatusAsync(id, userId, request.Status)
             ? NoContent()
-            : BadRequest(new { message = "Trạng thái không hợp lệ hoặc bạn không phải host." });
+            : BadRequest(new { message = "Invalid room status or you are not the host." });
     }
 
     [HttpPost("{id}/remove/{memberId}")]

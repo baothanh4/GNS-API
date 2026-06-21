@@ -1,119 +1,100 @@
 # Night Shift: Asylum Backend
 
-ASP.NET Core 8 + MongoDB cung cấp:
+Backend cho game **Night Shift: Asylum**, sử dụng ASP.NET Core 8, MongoDB,
+JWT authentication và TCP socket cho global chat.
 
-- JWT authentication và role `Player`/`Admin`.
-- Player profile, inventory và match history.
-- Room discovery cho Unity NGO Host/Client.
-- Global lobby chat qua asynchronous TCP socket.
+## Yêu cầu
 
-## Chạy local
+- .NET 8 SDK
+- MongoDB Community Server
+- PowerShell
 
-Yêu cầu:
+## 1. Chạy MongoDB
 
-- .NET 8 runtime/targeting pack.
-- MongoDB tại `mongodb://localhost:27017`.
+Mở PowerShell bằng quyền Administrator:
 
 ```powershell
-cd "D:\Unity\Night-Shift-Asylum-Workspace\Backend-Server"
+Start-Service MongoDB
+Get-Service MongoDB
+```
+
+MongoDB đã sẵn sàng khi trạng thái service là `Running`. Kết nối mặc định:
+
+```text
+mongodb://localhost:27017
+```
+
+Nếu MongoDB chưa được cài dưới dạng Windows Service, chạy trực tiếp:
+
+```powershell
+mongod --dbpath C:\data\db
+```
+
+Tạo thư mục `C:\data\db` trước nếu thư mục chưa tồn tại.
+
+## 2. Cấu hình JWT
+
+Không lưu JWT secret thật trong Git. Thiết lập biến môi trường cho cửa sổ
+PowerShell hiện tại:
+
+```powershell
+$env:JwtSettings__Secret="your-local-secret-key-at-least-32-characters"
+```
+
+MongoDB có thể được thay đổi bằng biến môi trường:
+
+```powershell
+$env:MongoDbSettings__ConnectionString="mongodb://localhost:27017"
+$env:MongoDbSettings__DatabaseName="NightShiftDb"
+```
+
+## 3. Chạy Backend
+
+```powershell
+cd D:\Unity\Night-Shift-Asylum-Workspace\Backend-Server
 dotnet restore
 dotnet run
 ```
 
-Server lắng nghe:
+Các địa chỉ mặc định:
 
 - REST API: `http://localhost:5000`
+- Health check: `http://localhost:5000/health`
 - TCP global chat: `localhost:5001`
-- Health check: `GET http://localhost:5000/health`
 
-Chạy test sau khi MongoDB và backend đã hoạt động:
+Kiểm tra API:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://localhost:5000/health
+```
+
+Kết quả hợp lệ có `StatusCode` là `200` và nội dung:
+
+```json
+{"status":"ok"}
+```
+
+## 4. Kiểm tra luồng dữ liệu
+
+Sau khi MongoDB và backend đang chạy:
 
 ```powershell
 .\test_api.ps1
 ```
 
-## Luồng Unity + NGO
-
-1. Client đăng ký/đăng nhập và nhận JWT.
-2. Host gọi `POST /api/rooms/create`, backend lưu room cùng IP/port NGO.
-3. Client lấy danh sách qua `GET /api/rooms`.
-4. Client gọi `POST /api/rooms/join/{id}`, nhận `hostAddress` và `port`.
-5. Unity cấu hình `UnityTransport`, đưa JWT vào NGO connection payload rồi kết nối.
-6. Host gọi `/api/auth/session` bằng JWT của client trong Connection Approval.
-7. Khi bắt đầu/kết thúc trận, host cập nhật room status và ghi match result.
-8. Khi rời/disconnect, room membership được dọn khỏi MongoDB.
-
-> Direct NGO Host/Client cần port host có thể truy cập từ client. Với máy khác trong LAN,
-> đặt `APIManager.baseUrl` thành IP máy chạy backend thay vì `localhost`. Internet/NAT thực tế
-> cần port forwarding hoặc Unity Relay.
-
-## REST API
-
-Header cho endpoint riêng tư:
+Script kiểm tra đăng ký, đăng nhập, profile, inventory, room và game score.
+Kết quả thành công:
 
 ```text
-Authorization: Bearer <JWT_TOKEN>
+PASS: auth/profile/inventory/room/score flow completed.
 ```
 
-| Chức năng | Method | Endpoint | Auth |
-|---|---:|---|---:|
-| Đăng ký | POST | `/api/auth/register` | Không |
-| Đăng nhập | POST | `/api/auth/login` | Không |
-| Kiểm tra session/JWT | GET | `/api/auth/session` | Player |
-| Lấy profile | GET | `/api/playerprofiles/me` | Player |
-| Đổi nickname | PUT | `/api/playerprofiles/me` | Player |
-| Cộng thắng/thua | POST | `/api/playerprofiles/me/stats` | Player |
-| Lấy inventory | GET | `/api/inventories/me` | Player |
-| Thay inventory | PUT | `/api/inventories/me` | Player |
-| Thêm item | POST | `/api/inventories/me/items` | Player |
-| Danh sách room đang chờ | GET | `/api/rooms` | Player |
-| Chi tiết room | GET | `/api/rooms/{id}` | Player |
-| Tạo room | POST | `/api/rooms/create` | Player |
-| Join room | POST | `/api/rooms/join/{id}` | Player |
-| Leave room | POST | `/api/rooms/leave/{id}` | Player |
-| Đổi room status | PUT | `/api/rooms/{id}/status` | Host |
-| Host xóa member disconnect | POST | `/api/rooms/{id}/remove/{memberId}` | Host |
-| Lấy lịch sử bản thân | GET | `/api/gamescores/me` | Player |
-| Ghi kết quả trận | POST | `/api/gamescores` | Player |
+## Cấu hình Unity
 
-### Body mẫu
-
-```json
-{
-  "email": "player@example.com",
-  "username": "player01",
-  "password": "Password123!"
-}
-```
-
-```json
-{
-  "roomName": "Ward B",
-  "maxPlayers": 4,
-  "port": 7777
-}
-```
-
-```json
-{
-  "itemId": "battery",
-  "name": "Battery",
-  "quantity": 1
-}
-```
-
-## TCP global chat protocol
-
-Kết nối TCP đến port `5001`, mỗi frame text kết thúc bằng newline:
+Unity client sử dụng:
 
 ```text
-AUTH|<JWT>
-hello everyone
+http://localhost:5000/api
 ```
 
-Server trả:
-
-```text
-SYSTEM|CONNECTED|player01
-CHAT|player01|hello everyone
-```
+Khi chạy client trên máy khác, thay `localhost` bằng IP của máy chạy backend.
