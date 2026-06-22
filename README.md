@@ -5,7 +5,7 @@ JWT authentication và TCP socket cho global chat.
 
 ## Yêu cầu
 
-- .NET 8 SDK
+- .NET 8 SDK (Dự án đã được cập nhật tương thích tốt với cả .NET 10 SDK)
 - MongoDB Community Server
 - PowerShell
 
@@ -47,6 +47,8 @@ MongoDB có thể được thay đổi bằng biến môi trường:
 $env:MongoDbSettings__ConnectionString="mongodb://localhost:27017"
 $env:MongoDbSettings__DatabaseName="NightShiftDb"
 ```
+
+*Lưu ý: Để thuận tiện cho việc test cục bộ, một khóa bí mật mặc định đã được cấu hình sẵn trong `appsettings.json`, bạn có thể bỏ qua bước đặt biến môi trường này khi chạy thử nghiệm.*
 
 ## 3. Chạy Backend
 
@@ -98,3 +100,35 @@ http://localhost:5000/api
 ```
 
 Khi chạy client trên máy khác, thay `localhost` bằng IP của máy chạy backend.
+
+---
+
+## 🎮 Hướng dẫn Tích hợp & Kiểm thử nâng cao trên Unity (Mới)
+
+### 1. Cơ chế Tự động Đăng nhập trong Unity Editor (Auto-Login)
+Khi bạn chạy thử nghiệm (Play) trực tiếp các Scene chơi game (như `MainScence`) trong Unity Editor mà chưa có UI Đăng nhập/Đăng ký:
+*   `APIManager` sẽ **tự động khởi tạo** và chạy ngầm.
+*   Hệ thống tự động đăng ký/đăng nhập tài khoản kiểm thử mặc định: **`test_player_new`** (mật khẩu: `Password123!`).
+*   Giúp bạn nhặt đồ và lưu dữ liệu trực tiếp vào MongoDB mà không bị lỗi xác thực JWT.
+
+### 2. Thiết lập UI Inventory (Hệ thống 2 Ô chứa)
+*   **Giới hạn**: Inventory được giới hạn tối đa **2 ô**. Mỗi ô chỉ chứa tối đa **1 vật phẩm** (không cộng dồn số lượng).
+*   **Vật lý nhặt đồ**: Để nhặt vật phẩm, bạn phải đảm bảo thành phần **Box Collider** trên prefab vật phẩm (như chiếc hộp `Key` hay `Battery`) đã được **tích chọn `Is Trigger`**. Nhân vật đi xuyên qua vật phẩm sẽ kích hoạt sự kiện nhặt đồ, cập nhật UI và tự động đồng bộ lên Database.
+*   **Đoạn code hỗ trợ va chạm vật lý thường (OnCollisionEnter)**: Nếu bạn quên tích chọn `Is Trigger`, hệ thống va chạm vẫn hỗ trợ tự nhận diện và nhặt đồ khi bạn đi tông trực tiếp vào vật phẩm.
+
+### 3. Cấu trúc CSDL MongoDB (Collection: Inventories)
+Mỗi tài khoản người chơi sẽ sở hữu một bản ghi lưu trữ hòm đồ dạng:
+
+```json
+{
+  "_id": ObjectId("6a39210f7924ab828370fb50"),
+  "PlayerId": ObjectId("6a39210f7924ab828370fb4e"),
+  "Items": [
+    {
+      "ItemId": "key",
+      "Name": "key",
+      "Quantity": 1
+    }
+  ]
+}
+```
