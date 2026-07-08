@@ -56,7 +56,7 @@ public sealed class RoomRepository : IRoomRepository
         return await _rooms.FindOneAndUpdateAsync(
             filter,
             update,
-            new FindOneAndUpdateOptions<Room> { ReturnDocument = ReturnDocument.After });
+            new FindOneAndUpdateOptions<Room, Room> { ReturnDocument = ReturnDocument.After });
     }
 
     public async Task<Room?> LeaveAsync(string roomId, string userId)
@@ -64,10 +64,10 @@ public sealed class RoomRepository : IRoomRepository
         var update = Builders<Room>.Update
             .Pull(room => room.CurrentPlayers, userId)
             .Set(room => room.UpdatedAt, DateTime.UtcNow);
-        return await _rooms.FindOneAndUpdateAsync(
+        return await _rooms.FindOneAndUpdateAsync<Room, Room>(
             room => room.Id == roomId,
             update,
-            new FindOneAndUpdateOptions<Room> { ReturnDocument = ReturnDocument.After });
+            new FindOneAndUpdateOptions<Room, Room> { ReturnDocument = ReturnDocument.After });
     }
 
     public async Task<bool> UpdateStatusAsync(string roomId, string ownerId, string status)
