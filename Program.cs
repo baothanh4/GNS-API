@@ -59,6 +59,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+app.UseDeveloperExceptionPage();
 app.UseCors("UnityClient");
 app.UseAuthentication();
 app.UseAuthorization();
