@@ -65,4 +65,4 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
-await app.RunAsync("http://0.0.0.0:5000");
+await app.RunAsync();
