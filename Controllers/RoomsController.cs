@@ -54,6 +54,16 @@ public sealed class RoomsController : ControllerBase
             : Ok(room);
     }
 
+    [HttpPost("join-by-name/{roomName}")]
+    public async Task<ActionResult<RoomDto>> JoinByName(string roomName)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        RoomDto? room = userId is null ? null : await _rooms.JoinByNameAsync(roomName, userId);
+        return room is null
+            ? Conflict(new { message = "Room not found or is full." })
+            : Ok(room);
+    }
+
     [HttpPost("leave/{id}")]
     public async Task<IActionResult> Leave(string id)
     {

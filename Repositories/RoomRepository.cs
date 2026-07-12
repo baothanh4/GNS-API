@@ -11,6 +11,7 @@ public interface IRoomRepository
 {
     Task<IReadOnlyList<Room>> GetWaitingAsync();
     Task<Room?> GetByIdAsync(string id);
+    Task<Room?> GetByNameAsync(string roomName);
     Task CreateAsync(Room room);
     Task<Room?> JoinAsync(string roomId, string userId);
     Task<Room?> LeaveAsync(string roomId, string userId);
@@ -35,6 +36,10 @@ public sealed class RoomRepository : IRoomRepository
 
     public async Task<Room?> GetByIdAsync(string id) =>
         await _rooms.Find(room => room.Id == id).FirstOrDefaultAsync();
+
+    public async Task<Room?> GetByNameAsync(string roomName) =>
+        await _rooms.Find(room => room.RoomName.ToLower() == roomName.ToLower() && room.Status == "Waiting")
+            .FirstOrDefaultAsync();
 
     public async Task CreateAsync(Room room) => await _rooms.InsertOneAsync(room);
 

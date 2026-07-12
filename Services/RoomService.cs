@@ -54,6 +54,14 @@ public sealed class RoomService
         return (await _rooms.JoinAsync(roomId, userId))?.ToDto();
     }
 
+    public async Task<RoomDto?> JoinByNameAsync(string roomName, string userId)
+    {
+        Room? room = await _rooms.GetByNameAsync(roomName);
+        if (room is null) return null;
+        if (room.CurrentPlayers.Contains(userId)) return room.ToDto();
+        return (await _rooms.JoinAsync(room.Id!, userId))?.ToDto();
+    }
+
     public async Task<bool> LeaveAsync(string roomId, string userId)
     {
         Room? room = await _rooms.LeaveAsync(roomId, userId);
