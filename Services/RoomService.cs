@@ -8,7 +8,7 @@ namespace API.Services;
 public sealed class RoomService
 {
     private static readonly HashSet<string> ValidStatuses =
-        new(StringComparer.OrdinalIgnoreCase) { "Waiting", "Playing", "Finished" };
+        new(StringComparer.OrdinalIgnoreCase) { "Waiting", "Playing", "Victory", "Defeat" };
 
     private readonly IRoomRepository _rooms;
 
