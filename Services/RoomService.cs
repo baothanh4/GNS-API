@@ -102,6 +102,10 @@ public sealed class RoomService
         return await _rooms.LeaveAsync(roomId, memberId) is not null;
     }
 
+    // [GNS301_Require] Business logic cho việc lưu Relay JoinCode — chỉ host mới có quyền.
+    public async Task<bool> SetRelayCodeAsync(string roomId, string ownerId, string relayJoinCode) =>
+        await _rooms.SetRelayCodeAsync(roomId, ownerId, relayJoinCode);
+
     private static string NormalizeStatus(string status) =>
         char.ToUpperInvariant(status[0]) + status[1..].ToLowerInvariant();
 

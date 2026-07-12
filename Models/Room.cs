@@ -30,6 +30,9 @@ namespace API.Models
         [BsonElement("port")]
         public int Port { get; set; } = 7777;
 
+        [BsonElement("relayJoinCode")]
+        public string? RelayJoinCode { get; set; }
+
         [BsonElement("status")]
         public string Status { get; set; } = "Waiting"; // Waiting, Playing, Finished
 

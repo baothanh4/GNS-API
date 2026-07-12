@@ -16,6 +16,7 @@ public interface IRoomRepository
     Task<Room?> JoinAsync(string roomId, string userId);
     Task<Room?> LeaveAsync(string roomId, string userId);
     Task<bool> UpdateStatusAsync(string roomId, string ownerId, string status);
+    Task<bool> SetRelayCodeAsync(string roomId, string ownerId, string relayJoinCode);
     Task DeleteAsync(string roomId);
 }
 
@@ -81,6 +82,17 @@ public sealed class RoomRepository : IRoomRepository
             room => room.Id == roomId && room.HostPlayerId == ownerId,
             Builders<Room>.Update
                 .Set(room => room.Status, status)
+                .Set(room => room.UpdatedAt, DateTime.UtcNow));
+        return result.ModifiedCount > 0;
+    }
+
+    // [GNS301_Require] Repository method lưu Relay JoinCode vào MongoDB, chỉ host mới được set.
+    public async Task<bool> SetRelayCodeAsync(string roomId, string ownerId, string relayJoinCode)
+    {
+        UpdateResult result = await _rooms.UpdateOneAsync(
+            room => room.Id == roomId && room.HostPlayerId == ownerId,
+            Builders<Room>.Update
+                .Set(room => room.RelayJoinCode, relayJoinCode)
                 .Set(room => room.UpdatedAt, DateTime.UtcNow));
         return result.ModifiedCount > 0;
     }

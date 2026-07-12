@@ -94,4 +94,17 @@ public sealed class RoomsController : ControllerBase
             ? NoContent()
             : Forbid();
     }
+
+    // [GNS301_Require] Endpoint REST cho host lưu Relay JoinCode sau khi tạo allocation.
+    [HttpPut("{id}/relay")]
+    public async Task<IActionResult> SetRelayCode(
+        string id,
+        UpdateRelayCodeRequestDto request)
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return userId is not null &&
+               await _rooms.SetRelayCodeAsync(id, userId, request.RelayJoinCode)
+            ? NoContent()
+            : BadRequest(new { message = "Failed to set relay code. You may not be the host." });
+    }
 }

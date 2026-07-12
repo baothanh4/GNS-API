@@ -31,6 +31,7 @@ public static class DtoMapper
             room.HostPlayerId,
             room.HostAddress,
             room.Port,
+            room.RelayJoinCode,
             room.Status,
             room.CreatedAt);
 

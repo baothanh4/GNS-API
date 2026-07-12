@@ -20,6 +20,12 @@ public sealed class UpdateRoomStatusRequestDto
     public string Status { get; set; } = string.Empty;
 }
 
+public sealed class UpdateRelayCodeRequestDto
+{
+    [Required]
+    public string RelayJoinCode { get; set; } = string.Empty;
+}
+
 public sealed record RoomDto(
     string Id,
     string RoomName,
@@ -28,6 +34,7 @@ public sealed record RoomDto(
     string HostPlayerId,
     string HostAddress,
     int Port,
+    string? RelayJoinCode,
     string Status,
     DateTime CreatedAt);
 
